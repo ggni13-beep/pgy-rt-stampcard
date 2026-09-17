@@ -21,10 +21,10 @@
     .header-title p { color: #666; font-size: 14px; margin-top: 4px; font-weight: bold; }
     .source-tag { background: #e6f7ff; border: 1px solid #91d5ff; color: #0056b3; font-size: 12px; font-weight: bold; padding: 6px 12px; border-radius: 6px; }
 
-    /* 雷達圖與進度區塊 */
-    .dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 24px; align-items: center; background: #fafafa; border: 1px solid #d9d9d9; padding: 16px; border-radius: 8px; }
-    .radar-container { width: 100%; max-width: 450px; margin: 0 auto; }
-    .progress-box { display: flex; flex-direction: column; justify-content: center; height: 100%; }
+    /* 雙圖表儀表板區塊 */
+    .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; align-items: center; background: #fafafa; border: 1px solid #d9d9d9; padding: 16px; border-radius: 8px; }
+    .chart-container { width: 100%; max-width: 360px; margin: 0 auto; }
+    .progress-box { display: flex; flex-direction: column; justify-content: center; height: 100%; background: #fff; padding: 16px; border-radius: 8px; border: 1px solid #e8e8e8; }
     .progress-title { font-weight: bold; color: #333; margin-bottom: 8px; font-size: 15px; }
     .progress-bar-bg { background: #e8e8e8; height: 20px; border-radius: 10px; overflow: hidden; margin-bottom: 8px; }
     .progress-bar-fill { background: linear-gradient(90deg, #1890ff, #52c41a); height: 100%; width: 0%; transition: width 0.3s ease; }
@@ -51,19 +51,19 @@
     /* 一般單行卡片 */
     .stamp-item { display: flex; align-items: center; justify-content: space-between; background: #ffffff; border: 1px solid #d9d9d9; border-radius: 6px; padding: 8px 10px; cursor: pointer; user-select: none; transition: all 0.2s; }
     .stamp-item:hover { border-color: #40a9ff; background: #e6f7ff; }
-    .stamp-item.completed { border-color: #52c41a; background: #f6ffed; }
+    .stamp-item.completed { border-color: #52c41a !important; background: #f6ffed !important; }
     .stamp-text { font-size: 12px; color: #333; }
     .stamp-item.completed .stamp-text { font-weight: bold; color: #274e13; }
     
     .stamp-badge { font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: bold; background: #f5f5f5; color: #8c8c8c; border: 1px solid #d9d9d9; }
-    .stamp-item.completed .stamp-badge { background: #52c41a; color: #ffffff; border: 1px solid #389e0d; }
+    .stamp-item.completed .stamp-badge { background: #52c41a !important; color: #ffffff !important; border: 1px solid #389e0d !important; }
 
     /* 多按鈕組合卡片 */
     .multi-btn-item { display: flex; align-items: center; justify-content: space-between; background: #ffffff; border: 1px solid #d9d9d9; border-radius: 6px; padding: 6px 10px; }
     .btn-group { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: 65%; }
     .sub-btn { font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 4px; background: #f5f5f5; color: #555; border: 1px solid #d9d9d9; cursor: pointer; user-select: none; transition: all 0.2s; }
     .sub-btn:hover { background: #e6f7ff; border-color: #40a9ff; color: #1890ff; }
-    .sub-btn.completed { background: #52c41a; color: #ffffff; border-color: #389e0d; }
+    .sub-btn.completed { background: #52c41a !important; color: #ffffff !important; border-color: #389e0d !important; }
 
     .recurrent-section { background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 8px; padding: 20px; }
     .recurrent-title { font-size: 16px; font-weight: bold; color: #274e13; margin-bottom: 12px; }
@@ -106,6 +106,7 @@
 
     let pgyKey = "default";
     let radarChart = null;
+    let techBarChart = null;
 
     window.addEventListener('DOMContentLoaded', () => {
       const urlParams = new URLSearchParams(window.location.search);
@@ -116,18 +117,17 @@
         document.getElementById('user-display-name').textContent = `PGY 呼吸治療師：${pgyKey} (24M 集點卡)`;
       }
 
-      initRadarChart();
+      initCharts();
       listenFirebaseData();
     });
 
-    // 監聽 Firebase 雲端資料庫變更
+    // 監聽 Firebase 資料庫變更
     function listenFirebaseData() {
-      const studentRef = ref(database, 'pgy_students/' + pgyKey);
+      const studentRef = ref(database, 'pgy_students/' + pgyKey + '/records');
       onValue(studentRef, (snapshot) => {
-        const data = snapshot.val() || {};
-        const records = data.records || {};
+        const records = snapshot.val() || {};
         
-        // 重置所有一般項目
+        // 更新單行卡片 (基礎/專業課程/技術考)
         document.querySelectorAll('.stamp-item').forEach(item => {
           const id = item.getAttribute('data-id');
           const badge = item.querySelector('.stamp-badge');
@@ -140,56 +140,70 @@
           }
         });
 
-        // 重置所有子按鈕 (EPA/管考)
+        // 更新按鈕組 (EPA / 常態管考 / SIRIPPP)
         document.querySelectorAll('.sub-btn').forEach(btn => {
           const id = btn.getAttribute('data-id');
-          const originalText = btn.getAttribute('data-raw-text') || btn.textContent.split(' ')[0];
+          const rawText = btn.getAttribute('data-raw-text') || btn.textContent.split(' ')[0];
           if (!btn.getAttribute('data-raw-text')) {
-            btn.setAttribute('data-raw-text', originalText);
+            btn.setAttribute('data-raw-text', rawText);
           }
 
           if (records[id]) {
             btn.classList.add('completed');
-            btn.textContent = records[id].score ? `${originalText} (${records[id].score}分)` : originalText;
+            btn.textContent = records[id].score ? `${rawText} (${records[id].score}分)` : `${rawText} ✓`;
           } else {
             btn.classList.remove('completed');
-            btn.textContent = originalText;
+            btn.textContent = rawText;
           }
         });
 
         updateProgressBar();
         updateRadarChart(records);
+        updateTechBarChart(records);
       });
     }
 
-    // 通用互動邏輯 (處理點擊 > 彈窗輸入分數 > 寫入 Firebase)
-    window.handleItemClick = function(element, type) {
+    // 處理需要彈窗輸入分數的項目
+    window.handleScoreItem = function(element, type) {
       const id = element.getAttribute('data-id');
       const isCompleted = element.classList.contains('completed');
       const itemRef = ref(database, `pgy_students/${pgyKey}/records/${id}`);
 
       if (isCompleted) {
-        const action = confirm("該項目已完成。按「確定」可重新修改分數，按「取消」可清除紀錄：");
-        if (!action) {
+        const choice = confirm("該項目已完成！\n【確定】：修改分數/註記\n【取消】：清除紀錄變回未完成");
+        if (!choice) {
           remove(itemRef);
           return;
         }
       }
 
-      let promptMsg = "請輸入完成註記或評語：";
+      let promptMsg = "請輸入評核備註：";
       let defaultVal = "通過";
 
       if (type === 'epa') {
-        promptMsg = "【EPA 臨床勝任力評核】請輸入 1 ~ 5 分 (Level 1~5)：";
-        defaultVal = "4";
+        promptMsg = "【EPA 勝任力評核】請輸入 1 ~ 5 分 (Level 1~5)：";
+        defaultVal = "3"; // 預設值改為 3
       } else if (type === 'tech') {
-        promptMsg = "【技術考與報告評核】請輸入考核分數 (建議 80 ~ 100 分)：";
-        defaultVal = "85";
+        promptMsg = "【技術考/報告評核】請輸入分數 (建議 80 ~ 100 分)：";
+        defaultVal = "80"; // 預設值改為 80
       }
 
       const inputVal = prompt(promptMsg, defaultVal);
       if (inputVal !== null && inputVal.trim() !== "") {
         set(itemRef, { completed: true, score: inputVal.trim(), timestamp: Date.now() });
+      }
+    };
+
+    // 處理直接點選即完成的項目
+    window.handleDirectToggle = function(element) {
+      const id = element.getAttribute('data-id');
+      const isCompleted = element.classList.contains('completed');
+      const itemRef = ref(database, `pgy_students/${pgyKey}/records/${id}`);
+
+      if (isCompleted) {
+        remove(itemRef);
+      } else {
+        set(itemRef, { completed: true, timestamp: Date.now() });
       }
     };
 
@@ -212,33 +226,47 @@
       document.getElementById('progress-text').textContent = `${completedItems} / ${totalItems} (${percentage}%)`;
     }
 
-    function initRadarChart() {
-      const ctx = document.getElementById('epaRadarChart').getContext('2d');
-      radarChart = new Chart(ctx, {
+    // 初始化圖表 (雷達圖 + 技術考柱狀圖)
+    function initCharts() {
+      // 1. EPA 雷達圖
+      const ctxRadar = document.getElementById('epaRadarChart').getContext('2d');
+      radarChart = new Chart(ctxRadar, {
         type: 'radar',
         data: {
-          labels: ['EPA 1 藥物吸入', 'EPA 3 胸腹肺擴張', 'EPA 5 氧氣治療', 'EPA 6 呼吸器設定', 'EPA 7 呼吸窘迫', 'EPA 8 緊急處置', 'EPA 9 病人轉送', 'EPA 10 呼吸器脫離', 'EPA 11 氣管內管移除'],
+          labels: ['EPA 1', 'EPA 3', 'EPA 5', 'EPA 6', 'EPA 7', 'EPA 8', 'EPA 9', 'EPA 10', 'EPA 11'],
           datasets: [{
-            label: 'EPA 臨床勝任力平均分數',
+            label: 'EPA 勝任力 (1-5分)',
             data: [0, 0, 0, 0, 0, 0, 0, 0, 0],
             backgroundColor: 'rgba(24, 144, 255, 0.2)',
             borderColor: '#1890ff',
-            pointBackgroundColor: '#1890ff',
-            pointBorderColor: '#fff',
-            pointHoverBackgroundColor: '#fff',
-            pointHoverBorderColor: '#1890ff'
+            pointBackgroundColor: '#1890ff'
           }]
         },
         options: {
           responsive: true,
-          scales: {
-            r: {
-              angleLines: { display: true },
-              suggestedMin: 0,
-              suggestedMax: 5,
-              ticks: { stepSize: 1 }
-            }
-          }
+          plugins: { legend: { display: false } },
+          scales: { r: { suggestedMin: 0, suggestedMax: 5, ticks: { stepSize: 1 } } }
+        }
+      });
+
+      // 2. 技術考柱狀圖
+      const ctxBar = document.getElementById('techBarChart').getContext('2d');
+      techBarChart = new Chart(ctxBar, {
+        type: 'bar',
+        data: {
+          labels: ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11'],
+          datasets: [{
+            label: '技術考成績',
+            data: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            backgroundColor: 'rgba(82, 196, 26, 0.6)',
+            borderColor: '#52c41a',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { y: { suggestedMin: 60, suggestedMax: 100, ticks: { stepSize: 10 } } }
         }
       });
     }
@@ -279,6 +307,22 @@
         radarChart.update();
       }
     }
+
+    function updateTechBarChart(records) {
+      const techIds = ['tech1', 'tech2', 'tech3', 'tech4', 'tech5', 'tech6', 'tech7', 'tech8', 'tech9', 'tech10', 'tech11'];
+      const scores = techIds.map(id => {
+        if (records[id] && records[id].score) {
+          const num = parseFloat(records[id].score);
+          return !isNaN(num) ? num : 0;
+        }
+        return 0;
+      });
+
+      if (techBarChart) {
+        techBarChart.data.datasets[0].data = scores;
+        techBarChart.update();
+      }
+    }
   </script>
 </head>
 <body>
@@ -297,10 +341,15 @@
       <div class="source-tag">🌐 Firebase 雲端即時同步中</div>
     </div>
 
-    <!-- 雷達圖與進度儀表板 -->
+    <!-- 雙圖表與進度儀表板 -->
     <div class="dashboard-grid">
-      <div class="radar-container">
+      <div class="chart-container">
+        <div style="font-size: 12px; font-weight: bold; text-align: center; color: #0056b3; margin-bottom: 4px;">EPA 勝任力雷達圖 (1-5分)</div>
         <canvas id="epaRadarChart"></canvas>
+      </div>
+      <div class="chart-container">
+        <div style="font-size: 12px; font-weight: bold; text-align: center; color: #389e0d; margin-bottom: 4px;">技術考與報告成績 (80-100分)</div>
+        <canvas id="techBarChart"></canvas>
       </div>
       <div class="progress-box">
         <div class="progress-title">🏆 PGY 核心技能達成率</div>
@@ -308,7 +357,7 @@
           <div class="progress-bar-fill" id="progress-bar"></div>
         </div>
         <div style="font-size: 18px; font-weight: bold; color: #0056b3;" id="progress-text">0 / 43 (0%)</div>
-        <p style="font-size: 12px; color: #666; margin-top: 10px;">* 點擊任何欄位皆可輸入評核分數/成績，框框變綠後會自動繪製勝任力雷達圖並同步至雲端。</p>
+        <p style="font-size: 11px; color: #666; margin-top: 8px;">* EPA點擊預設 3 分，技術考預設 80 分；SIRIPPP 與常態管考點擊即可打勾。</p>
       </div>
     </div>
 
@@ -324,79 +373,85 @@
         <div class="section-box">
           <div class="section-box-title">🔷 基礎課程項目 (點擊評核)</div>
           <div class="stamp-list">
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="base_c1"><span class="stamp-text">基本氧氣治療與溼氣噴霧治療</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="base_c2"><span class="stamp-text">低血氧/高二氧化碳/ABG</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="base_c3"><span class="stamp-text">Auto-PEEP及處置</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="base_c4"><span class="stamp-text">身體評估</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="base_c5"><span class="stamp-text">呼吸照護登入系統 (VPN)</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="base_c1"><span class="stamp-text">基本氧氣治療與溼氣噴霧治療</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="base_c2"><span class="stamp-text">低血氧/高二氧化碳/ABG</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="base_c3"><span class="stamp-text">Auto-PEEP及處置</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="base_c4"><span class="stamp-text">身體評估</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="base_c5"><span class="stamp-text">呼吸照護登入系統 (VPN)</span><span class="stamp-badge">🔒 未完成</span></div>
           </div>
         </div>
 
         <div class="section-box">
-          <div class="section-box-title">🔶 EPA 點數 (點擊輸入 1-5 分)</div>
+          <div class="section-box-title">🔶 EPA 點數 (點擊預設 3 分)</div>
           <div class="stamp-list">
             <div class="multi-btn-item">
               <span class="stamp-text">EPA 1 藥物吸入照護</span>
               <div class="btn-group">
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa1_1">1-1</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa1_2">1-2</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa1_3">1-3</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa1_1">1-1</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa1_2">1-2</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa1_3">1-3</span>
               </div>
             </div>
             <div class="multi-btn-item">
               <span class="stamp-text">EPA 5 氧氣治療照護</span>
               <div class="btn-group">
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa5_1">5-1</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa5_2">5-2</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa5_3">5-3</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa5_1">5-1</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa5_2">5-2</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa5_3">5-3</span>
               </div>
             </div>
             <div class="multi-btn-item">
               <span class="stamp-text">EPA 6 侵襲呼吸器初始設定</span>
               <div class="btn-group">
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa6_1">6-1</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa6_2">6-2</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa6_3">6-3</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa6_1">6-1</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa6_2">6-2</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa6_3">6-3</span>
               </div>
             </div>
           </div>
         </div>
 
         <div class="section-box">
-          <div class="section-box-title">🔴 技術考點數 (點擊輸入 80-100 分)</div>
+          <div class="section-box-title">🔴 技術考點數 (點擊預設 80 分)</div>
           <div class="stamp-list">
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'tech')" data-id="tech1"><span class="stamp-text">侵襲/非侵襲管路設定</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'tech')" data-id="tech2"><span class="stamp-text">呼吸管路更換作業</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'tech')" data-id="tech3"><span class="stamp-text">肺部功能測量作業</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'tech')" data-id="tech4"><span class="stamp-text">氣管內管氣囊漏氣測試</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'tech')" data-id="tech5"><span class="stamp-text">呼吸評估測量作業</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'tech')" data-id="tech6"><span class="stamp-text">小量噴霧器作業</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'tech')" data-id="tech1"><span class="stamp-text">T1 侵襲/非侵襲管路設定</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'tech')" data-id="tech2"><span class="stamp-text">T2 呼吸管路更換作業</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'tech')" data-id="tech3"><span class="stamp-text">T3 肺部功能測量作業</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'tech')" data-id="tech4"><span class="stamp-text">T4 氣管內管氣囊漏氣測試</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'tech')" data-id="tech5"><span class="stamp-text">T5 呼吸評估測量作業</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'tech')" data-id="tech6"><span class="stamp-text">T6 小量噴霧器作業</span><span class="stamp-badge">🔒 未完成</span></div>
           </div>
         </div>
 
         <div class="section-box">
-          <div class="section-box-title">📌 階段一常態管考</div>
+          <div class="section-box-title">📌 階段一常態管考 (點擊即可打勾)</div>
           <div class="stamp-list">
             <div class="multi-btn-item">
               <span class="stamp-text">導師輔導訪談</span>
               <div class="btn-group">
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m1">M1</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m2">M2</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m3">M3</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m1">M1</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m2">M2</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m3">M3</span>
               </div>
             </div>
             <div class="multi-btn-item">
               <span class="stamp-text">教學滿意度調查</span>
               <div class="btn-group">
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m1">M1</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m2">M2</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m3">M3</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m1">M1</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m2">M2</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m3">M3</span>
               </div>
             </div>
             <div class="multi-btn-item">
-              <span class="stamp-text">CCC 臨床能力委員會討論會</span>
+              <span class="stamp-text">CCC 討論會</span>
               <div class="btn-group">
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="s1_ccc3">M3</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="s1_ccc3">M3</span>
+              </div>
+            </div>
+            <div class="multi-btn-item">
+              <span class="stamp-text">SIRIPPP 核心能力自評</span>
+              <div class="btn-group">
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="s1_siri3">M3</span>
               </div>
             </div>
           </div>
@@ -414,107 +469,113 @@
         <div class="section-box">
           <div class="section-box-title">🔷 專業課程項目 (點擊評核)</div>
           <div class="stamp-list">
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="adv_c1"><span class="stamp-text">臨床成人呼吸生理學</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="adv_c2"><span class="stamp-text">胸腔常見疾病介紹</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="adv_c3"><span class="stamp-text">小兒氣道照護</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="adv_c4"><span class="stamp-text">呼吸器分類/操作/脫離(含ATC)</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="adv_c5"><span class="stamp-text">健保相關事宜</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="adv_c1"><span class="stamp-text">臨床成人呼吸生理學</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="adv_c2"><span class="stamp-text">胸腔常見疾病介紹</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="adv_c3"><span class="stamp-text">小兒氣道照護</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="adv_c4"><span class="stamp-text">呼吸器分類/操作/脫離(含ATC)</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="adv_c5"><span class="stamp-text">健保相關事宜</span><span class="stamp-badge">🔒 未完成</span></div>
           </div>
         </div>
 
         <div class="section-box">
-          <div class="section-box-title">🔶 EPA 點數 (點擊輸入 1-5 分)</div>
+          <div class="section-box-title">🔶 EPA 點數 (點擊預設 3 分)</div>
           <div class="stamp-list">
             <div class="multi-btn-item">
               <span class="stamp-text">EPA 3 胸腹手術肺擴張</span>
               <div class="btn-group">
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa3_1">3-1</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa3_2">3-2</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa3_3">3-3</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa3_1">3-1</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa3_2">3-2</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa3_3">3-3</span>
               </div>
             </div>
             <div class="multi-btn-item">
               <span class="stamp-text">EPA 8 呼吸器緊急處置</span>
               <div class="btn-group">
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa8_1">8-1</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa8_2">8-2</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa8_3">8-3</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa8_1">8-1</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa8_2">8-2</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa8_3">8-3</span>
               </div>
             </div>
             <div class="multi-btn-item">
               <span class="stamp-text">EPA 9 呼吸器病人轉送</span>
               <div class="btn-group">
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa9_1">9-1</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa9_2">9-2</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa9_3">9-3</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa9_1">9-1</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa9_2">9-2</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa9_3">9-3</span>
               </div>
             </div>
             <div class="multi-btn-item">
               <span class="stamp-text">EPA 10 侵襲呼吸器脫離</span>
               <div class="btn-group">
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa10_1">10-1</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa10_2">10-2</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa10_3">10-3</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa10_1">10-1</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa10_2">10-2</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa10_3">10-3</span>
               </div>
             </div>
             <div class="multi-btn-item">
               <span class="stamp-text">EPA 11 移除氣管內管</span>
               <div class="btn-group">
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa11_1">11-1</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa11_2">11-2</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa11_3">11-3</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa11_1">11-1</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa11_2">11-2</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa11_3">11-3</span>
               </div>
             </div>
           </div>
         </div>
 
         <div class="section-box">
-          <div class="section-box-title">🔴 技術考與報告點數 (點擊輸入 80-100 分)</div>
+          <div class="section-box-title">🔴 技術考與報告點數 (點擊預設 80 分)</div>
           <div class="stamp-list">
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'tech')" data-id="tech7"><span class="stamp-text">俯臥作業流程</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'tech')" data-id="tech8"><span class="stamp-text">高頻呼吸器 (HFOV) 作業</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'tech')" data-id="tech9"><span class="stamp-text">一氧化氮 (iNO) 吸入作業</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'tech')" data-id="tech10"><span class="stamp-text">肺部擴充術作業</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'tech')" data-id="report_case"><span class="stamp-text">個案報告 1 篇</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'tech')" data-id="report_journal"><span class="stamp-text">期刊報告 1 篇</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'tech')" data-id="tech7"><span class="stamp-text">T7 俯臥作業流程</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'tech')" data-id="tech8"><span class="stamp-text">T8 高頻呼吸器 (HFOV) 作業</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'tech')" data-id="tech9"><span class="stamp-text">T9 一氧化氮 (iNO) 吸入作業</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'tech')" data-id="tech10"><span class="stamp-text">T10 肺部擴充術作業</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'tech')" data-id="report_case"><span class="stamp-text">個案報告 1 篇</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'tech')" data-id="report_journal"><span class="stamp-text">期刊報告 1 篇</span><span class="stamp-badge">🔒 未完成</span></div>
           </div>
         </div>
 
         <div class="section-box">
-          <div class="section-box-title">📌 階段二常態管考</div>
+          <div class="section-box-title">📌 階段二常態管考 (點擊即可打勾)</div>
           <div class="stamp-list">
             <div class="multi-btn-item">
               <span class="stamp-text">導師輔導訪談</span>
               <div class="btn-group">
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m4">M4</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m5">M5</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m6">M6</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m7">M7</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m8">M8</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m9">M9</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m10">M10</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m11">M11</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m12">M12</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m4">M4</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m5">M5</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m6">M6</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m7">M7</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m8">M8</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m9">M9</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m10">M10</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m11">M11</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m12">M12</span>
               </div>
             </div>
             <div class="multi-btn-item">
               <span class="stamp-text">教學滿意度調查</span>
               <div class="btn-group">
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m4">M4</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m5">M5</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m6">M6</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m7">M7</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m8">M8</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m9">M9</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m10">M10</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m11">M11</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m12">M12</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m4">M4</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m5">M5</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m6">M6</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m7">M7</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m8">M8</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m9">M9</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m10">M10</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m11">M11</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m12">M12</span>
               </div>
             </div>
             <div class="multi-btn-item">
-              <span class="stamp-text">CCC 臨床能力委員會討論會</span>
+              <span class="stamp-text">CCC 討論會</span>
               <div class="btn-group">
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="s2_ccc9">M9</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="s2_ccc9">M9</span>
+              </div>
+            </div>
+            <div class="multi-btn-item">
+              <span class="stamp-text">SIRIPPP 核心能力自評</span>
+              <div class="btn-group">
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="s2_siri9">M9</span>
               </div>
             </div>
           </div>
@@ -532,83 +593,90 @@
         <div class="section-box">
           <div class="section-box-title">🔷 第二年專業重症課程 (點擊評核)</div>
           <div class="stamp-list">
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="y2_c1"><span class="stamp-text">手術前後呼吸照護</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="y2_c2"><span class="stamp-text">COPD 呼吸照護</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="y2_c3"><span class="stamp-text">ARDS 呼吸照護</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="y2_c4"><span class="stamp-text">VAP 呼吸照護</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="y2_c5"><span class="stamp-text">呼吸功能改善</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="y2_c6"><span class="stamp-text">HFOV 臨床應用</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="y2_c7"><span class="stamp-text">iNO 臨床應用</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="y2_c8"><span class="stamp-text">Prone Position Ventilation</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'course')" data-id="y2_c9"><span class="stamp-text">Lung Recruitment Management</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="y2_c1"><span class="stamp-text">手術前後呼吸照護</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="y2_c2"><span class="stamp-text">COPD 呼吸照護</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="y2_c3"><span class="stamp-text">ARDS 呼吸照護</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="y2_c4"><span class="stamp-text">VAP 呼吸照護</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="y2_c5"><span class="stamp-text">呼吸功能改善</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="y2_c6"><span class="stamp-text">HFOV 臨床應用</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="y2_c7"><span class="stamp-text">iNO 臨床應用</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="y2_c8"><span class="stamp-text">Prone Position Ventilation</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'course')" data-id="y2_c9"><span class="stamp-text">Lung Recruitment Management</span><span class="stamp-badge">🔒 未完成</span></div>
           </div>
         </div>
 
         <div class="section-box">
-          <div class="section-box-title">🔶 EPA 點數 (點擊輸入 1-5 分)</div>
+          <div class="section-box-title">🔶 EPA 點數 (點擊預設 3 分)</div>
           <div class="stamp-list">
             <div class="multi-btn-item">
               <span class="stamp-text">EPA 7 呼吸窘迫處置</span>
               <div class="btn-group">
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa7_1">7-1</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa7_2">7-2</span>
-                <span class="sub-btn is-core" onclick="handleItemClick(this, 'epa')" data-id="epa7_3">7-3</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa7_1">7-1</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa7_2">7-2</span>
+                <span class="sub-btn is-core" onclick="handleScoreItem(this, 'epa')" data-id="epa7_3">7-3</span>
               </div>
             </div>
           </div>
         </div>
 
         <div class="section-box">
-          <div class="section-box-title">🔴 技術考與總驗收點數 (點擊輸入 80-100 分)</div>
+          <div class="section-box-title">🔴 技術考與總驗收點數 (點擊預設 80 分)</div>
           <div class="stamp-list">
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'tech')" data-id="tech11"><span class="stamp-text">13-24M 技術評核總驗收</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'tech')" data-id="report1"><span class="stamp-text">個案報告 1 篇 (≥ 80分)</span><span class="stamp-badge">🔒 未完成</span></div>
-            <div class="stamp-item is-core" onclick="handleItemClick(this, 'tech')" data-id="report2"><span class="stamp-text">文獻實證專題報告 (≥ 80分)</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'tech')" data-id="tech11"><span class="stamp-text">T11 13-24M 技術評核總驗收</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'tech')" data-id="report1"><span class="stamp-text">個案報告 1 篇 (≥ 80分)</span><span class="stamp-badge">🔒 未完成</span></div>
+            <div class="stamp-item is-core" onclick="handleScoreItem(this, 'tech')" data-id="report2"><span class="stamp-text">文獻實證專題報告 (≥ 80分)</span><span class="stamp-badge">🔒 未完成</span></div>
           </div>
         </div>
 
         <div class="section-box">
-          <div class="section-box-title">📌 階段三常態管考</div>
+          <div class="section-box-title">📌 階段三常態管考 (點擊即可打勾)</div>
           <div class="stamp-list">
             <div class="multi-btn-item">
               <span class="stamp-text">導師輔導訪談</span>
               <div class="btn-group">
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m13">M13</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m14">M14</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m15">M15</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m16">M16</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m17">M17</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m18">M18</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m19">M19</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m20">M20</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m21">M21</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m22">M22</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m23">M23</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="interview_m24">M24</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m13">M13</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m14">M14</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m15">M15</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m16">M16</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m17">M17</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m18">M18</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m19">M19</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m20">M20</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m21">M21</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m22">M22</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m23">M23</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="interview_m24">M24</span>
               </div>
             </div>
             <div class="multi-btn-item">
               <span class="stamp-text">教學滿意度調查</span>
               <div class="btn-group">
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m13">M13</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m14">M14</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m15">M15</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m16">M16</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m17">M17</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m18">M18</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m19">M19</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m20">M20</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m21">M21</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m22">M22</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m23">M23</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="survey_m24">M24</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m13">M13</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m14">M14</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m15">M15</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m16">M16</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m17">M17</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m18">M18</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m19">M19</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m20">M20</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m21">M21</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m22">M22</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m23">M23</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="survey_m24">M24</span>
               </div>
             </div>
             <div class="multi-btn-item">
-              <span class="stamp-text">CCC 臨床能力委員會討論會</span>
+              <span class="stamp-text">CCC 討論會</span>
               <div class="btn-group">
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="s3_ccc15">M15</span>
-                <span class="sub-btn" onclick="handleItemClick(this, 'course')" data-id="s3_ccc21">M21</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="s3_ccc15">M15</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="s3_ccc21">M21</span>
+              </div>
+            </div>
+            <div class="multi-btn-item">
+              <span class="stamp-text">SIRIPPP 核心能力自評</span>
+              <div class="btn-group">
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="s3_siri15">M15</span>
+                <span class="sub-btn" onclick="handleDirectToggle(this)" data-id="s3_siri21">M21</span>
               </div>
             </div>
           </div>
@@ -628,7 +696,7 @@
         <div class="recurrent-item">
           <strong>📌 每 3 個月 (Quarterly)</strong><br>
           • Mini-CEX 評量 1 次 / CbD 病例討論 1 次<br>
-          • IPD 跨領域討論 1 次 / SIRIPPP 核心能力自評
+          • IPD 跨領域討論 1 次 / SIRIPPP 核心能力自評 (每半年管考: M3, M9, M15, M21)
         </div>
         <div class="recurrent-item">
           <strong>📌 階段性 / 半年</strong><br>
